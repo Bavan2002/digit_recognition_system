@@ -1,200 +1,140 @@
 """
 Training script for MNIST digit recognition.
-Uses PyTorch with data augmentation and learning rate scheduling.
+Uses PyTorch with simple CNN architecture.
 """
 
-import os
 import torch
 import torch.nn as nn
-import torch.optim as optim
+from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from model import DigitRecognitionCNN, get_device, save_model
+from torchvision import datasets
+from torchvision.transforms import ToTensor
+from model import ImageClassifier, get_device, save_model
 
 
-def get_data_loaders(batch_size=64):
- """
- Create train and test dataloaders with augmentation.
+def get_data_loaders(batch_size=32):
+    """
+    Create train and test dataloaders.
 
- Args:
- batch_size: Batch size for training
+    Args:
+        batch_size: Batch size for training
 
- Returns:
- Tuple of (train_loader, test_loader)
- """
- # Training transforms with augmentation
- train_transform = transforms.Compose(
- [
- transforms.RandomRotation(10),
- transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
- transforms.ToTensor(),
- transforms.Normalize((0.1307,), (0.3081,)),
- ]
- )
+    Returns:
+        Tuple of (train_loader, test_loader)
+    """
+    # Download MNIST dataset
+    train_data = datasets.MNIST(
+        root="data", train=True, download=True, transform=ToTensor()
+    )
+    test_data = datasets.MNIST(
+        root="data", train=False, download=True, transform=ToTensor()
+    )
 
- # Test transforms without augmentation
- test_transform = transforms.Compose(
- [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
- )
+    # Wrap datasets in DataLoader for batching
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
- # Load datasets
- train_dataset = datasets.MNIST(
- root="./data", train=True, download=True, transform=train_transform
- )
-
- test_dataset = datasets.MNIST(
- root="./data", train=False, download=True, transform=test_transform
- )
-
- # Create dataloaders
- train_loader = DataLoader(
- train_dataset,
- batch_size=batch_size,
- shuffle=True,
- num_workers=2,
- pin_memory=True,
- )
-
- test_loader = DataLoader(
- test_dataset,
- batch_size=batch_size,
- shuffle=False,
- num_workers=2,
- pin_memory=True,
- )
-
- return train_loader, test_loader
+    return train_loader, test_loader
 
 
-def train_epoch(model, device, train_loader, optimizer, criterion, epoch):
- """Train for one epoch."""
- model.train()
- running_loss = 0.0
- correct = 0
- total = 0
+def train_epoch(model, device, train_loader, optimizer, loss_fn, epoch, epochs):
+    """Train for one epoch."""
+    model.train()
+    running_loss = 0.0
 
- for batch_idx, (data, target) in enumerate(train_loader):
- data, target = data.to(device), target.to(device)
+    for batch_idx, (X, y) in enumerate(train_loader):
+        X, y = X.to(device), y.to(device)
 
- optimizer.zero_grad()
- output = model(data)
- loss = criterion(output, target)
- loss.backward()
- optimizer.step()
+        # Forward pass
+        yhat = model(X)
+        loss = loss_fn(yhat, y)
 
- running_loss += loss.item()
- _, predicted = output.max(1)
- total += target.size(0)
- correct += predicted.eq(target).sum().item()
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
- if (batch_idx + 1) % 100 == 0:
- print(
- f" Batch [{batch_idx + 1}/{len(train_loader)}] | "
- f"Loss: {running_loss / (batch_idx + 1):.4f} | "
- f"Acc: {100.0 * correct / total:.2f}%"
- )
+        running_loss += loss.item()
 
- epoch_loss = running_loss / len(train_loader)
- epoch_acc = 100.0 * correct / total
-
- return epoch_loss, epoch_acc
+    avg_loss = running_loss / len(train_loader)
+    print(f"Epoch {epoch + 1}/{epochs} | Loss: {avg_loss:.4f}")
+    return avg_loss
 
 
-def test_model(model, device, test_loader, criterion):
- """Evaluate model on test set."""
- model.eval()
- test_loss = 0
- correct = 0
- total = 0
+def test_model(model, device, test_loader):
+    """Evaluate model on test set."""
+    model.eval()
+    correct = 0
+    total = 0
 
- with torch.no_grad():
- for data, target in test_loader:
- data, target = data.to(device), target.to(device)
- output = model(data)
- test_loss += criterion(output, target).item()
- _, predicted = output.max(1)
- total += target.size(0)
- correct += predicted.eq(target).sum().item()
+    with torch.no_grad():
+        for X, y in test_loader:
+            X, y = X.to(device), y.to(device)
+            yhat = model(X)
+            preds = torch.argmax(yhat, dim=1)
+            correct += (preds == y).sum().item()
+            total += y.size(0)
 
- test_loss /= len(test_loader)
- test_acc = 100.0 * correct / total
-
- return test_loss, test_acc
+    accuracy = correct / total
+    print(f"Test Accuracy: {accuracy * 100:.2f}%")
+    return accuracy
 
 
-def train_digit_recognizer(epochs=20, batch_size=64, learning_rate=0.001):
- """
- Main training function for digit recognition model.
+def train_digit_recognizer(epochs=10, batch_size=32, learning_rate=0.001):
+    """
+    Main training function for digit recognition model.
 
- Args:
- epochs: Number of training epochs
- batch_size: Training batch size
- learning_rate: Initial learning rate
- """
- # Setup
- os.makedirs("models", exist_ok=True)
- device = get_device()
+    Args:
+        epochs: Number of training epochs
+        batch_size: Training batch size
+        learning_rate: Learning rate
+    """
+    # Setup
+    device = get_device()
+    print("=" * 70)
+    print("MNIST Digit Recognition Training")
+    print("=" * 70)
+    print(f"Device: {device}\n")
 
- print("=" * 70)
- print("MNIST Digit Recognition Training")
- print("=" * 70)
- print(f"Device: {device}")
+    # Load data
+    print("Loading MNIST dataset...")
+    train_loader, test_loader = get_data_loaders(batch_size)
+    print(f"Training batches: {len(train_loader)}")
+    print(f"Test batches: {len(test_loader)}\n")
 
- # Load data
- print("\nLoading MNIST dataset...")
- train_loader, test_loader = get_data_loaders(batch_size)
- print(f"Training batches: {len(train_loader)}")
- print(f"Test batches: {len(test_loader)}")
+    # Build model
+    print("Building model...")
+    model = ImageClassifier().to(device)
+    print(model)
+    print()
 
- # Build model
- print("\nBuilding model...")
- model = DigitRecognitionCNN().to(device)
+    # Loss and optimizer
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=learning_rate)
 
- # Loss and optimizer
- criterion = nn.CrossEntropyLoss()
- optimizer = optim.Adam(model.parameters(), lr=learning_rate)
- scheduler = optim.lr_scheduler.ReduceLROnPlateau(
- optimizer, mode="min", factor=0.5, patience=3, verbose=True
- )
+    # Training loop
+    print("=" * 70)
+    print("Starting training...")
+    print("=" * 70 + "\n")
 
- # Training loop
- print("\n" + "=" * 70)
- print("Starting training...")
- print("=" * 70 + "\n")
+    for epoch in range(epochs):
+        train_epoch(model, device, train_loader, optimizer, loss_fn, epoch, epochs)
 
- best_acc = 0.0
+    # Final evaluation
+    print("\n" + "=" * 70)
+    print("Final Evaluation")
+    print("=" * 70)
+    accuracy = test_model(model, device, test_loader)
 
- for epoch in range(epochs):
- print(f"Epoch [{epoch + 1}/{epochs}]")
+    # Save model
+    save_model(model, "models/mnist_cnn_model.pt")
 
- train_loss, train_acc = train_epoch(
- model, device, train_loader, optimizer, criterion, epoch
- )
+    print("\n" + "=" * 70)
+    print(f"Training complete! Final accuracy: {accuracy * 100:.2f}%")
+    print("=" * 70)
 
- test_loss, test_acc = test_model(model, device, test_loader, criterion)
-
- scheduler.step(test_loss)
-
- print(f" Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
- print(f" Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%")
-
- # Save best model
- if test_acc > best_acc:
- best_acc = test_acc
- save_model(model, "models/digit_recognizer_best.pth")
- print(f" >>> New best model saved! (Acc: {best_acc:.2f}%)")
-
- print()
-
- # Save final model
- save_model(model, "models/digit_recognizer_final.pth")
-
- print("=" * 70)
- print(f"Training complete! Best test accuracy: {best_acc:.2f}%")
- print("=" * 70)
-
- return model
+    return model
 
 
 if __name__ == "__main__":
- train_digit_recognizer(epochs=20, batch_size=64, learning_rate=0.001)
+    train_digit_recognizer(epochs=10, batch_size=32, learning_rate=0.001)
