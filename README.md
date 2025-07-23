@@ -15,6 +15,12 @@ This project implements a Convolutional Neural Network using PyTorch to classify
 - Pre-trained model included
 - Fast inference (<10ms per image)
 
+## Demo
+
+![Web UI Example](results/web_ui.png)
+
+The web interface allows you to upload handwritten digit images and get instant predictions with confidence scores.
+
 ## Installation
 
 ### Using uv (Recommended)
@@ -114,6 +120,8 @@ digit_recognition_system/
 ├── train.py            # Training script
 ├── models/             # Saved model weights
 │   └── mnist_cnn_model.pt
+├── results/            # Screenshots and examples
+│   └── web_ui.png
 ├── data/               # MNIST dataset (auto-downloaded)
 ├── old/                # Original notebook and model
 ├── pyproject.toml      # uv/pip dependencies
